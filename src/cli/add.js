@@ -7,14 +7,15 @@ var inquirer = require('inquirer');
 var isThere = require('is-there');
 var links = require('../links.js');
 
-exports.command = 'add <src> <dest>';
+exports.command = 'add <src> <dest> [silent]';
 
 exports.describe = 'Adds a link';
 
 exports.builder = {};
 
-function promptForIgnoredFolders(src, rules) {
+function promptForIgnoredFolders(src, rules, silent) {
 	var prompts = [];
+	let defaults = {};
 
 	rules.forEach((rule) => {
 		if (isThere(path.resolve(src, rule.relPath))) {
@@ -24,20 +25,32 @@ function promptForIgnoredFolders(src, rules) {
 				default: rule.default,
 				type: 'confirm'
 			});
+			let def = {};
+			def[rule.name]=rule.default;
+			Object.assign(defaults, def);
 		}
 	});
 
-	return inquirer.prompt(prompts).then((answers) => {
-		var ignoredFolders = [];
-
-		rules.forEach((rule) => {
-			if (answers[rule.name]) {
-				ignoredFolders.push(rule.ignore);
-			}
+	return silent==="true" ?
+		Promise.resolve(defaults).then((answers) => {
+			return setIgnoredFolders(answers, rules);
+		})
+	:
+		inquirer.prompt(prompts).then((answers) => {
+			return setIgnoredFolders(answers, rules);
 		});
+}
 
-		return ignoredFolders;
+function setIgnoredFolders(answers, rules) {
+	var ignoredFolders = [];
+
+	rules.forEach((rule) => {
+		if (answers[rule.name]) {
+			ignoredFolders.push(rule.ignore);
+		}
 	});
+
+	return ignoredFolders;
 }
 
 function dedupeArray(array) {
@@ -58,7 +71,8 @@ exports.handler = function (argv) {
 	links.load();
 	var i,
 	    src = path.resolve(untildify(argv.src)),
-	    dest = path.resolve(untildify(argv.dest));
+		dest = path.resolve(untildify(argv.dest)),
+		silent = argv.silent;
 
 	for (i in links.data) {
 		if (links.data[i].src === src &&
@@ -80,7 +94,7 @@ exports.handler = function (argv) {
 		ignore: 'node_modules',
 		message: 'Source folder is an npm package, add `node_modules` to ignored folders?',
 		default: true
-	}]).then((ignoredFolders) => {
+	}], silent).then((ignoredFolders) => {
 		var watchmanConfigPath = path.resolve(src, '.watchmanconfig');
 
 		var watchmanConfig = (() => {
